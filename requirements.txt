@@ -1,0 +1,6 @@
+PySide6>=6.5
+opencv-python>=4.8
+mediapipe>=0.10.14
+numpy>=1.24
+certifi
+pyobjc-framework-Cocoa; sys_platform == "darwin"
