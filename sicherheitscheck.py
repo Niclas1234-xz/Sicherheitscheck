@@ -204,7 +204,10 @@ def hud_payload(f) -> dict:
     """Bereitet die Messwerte eines Gesichts für das HUD auf (gespiegelt wie die Vorschau)."""
     x0, y0, x1, y1 = f.bbox
     d = {
-        "box": (1 - x1, y0, 1 - x0, y1), "role": f.role, "looking": bool(f.looking), "id": f.track_id,
+        "box": (1 - x1, y0, 1 - x0, y1), "role": f.role, "id": f.track_id,
+        # «looking» = zählt für die Warnung (weiter weg erst nach längerem Hinschauen)
+        "looking": bool(f.staring if f.staring is not None else f.looking),
+        "looking_raw": bool(f.looking), "dwell": f.dwell_s, "strict": f.strict,
         "distance": f.distance_m, "eyes_used": f.eyes_used, "eyes_open": f.eyes_open,
         "far": f.far, "eye_weight": f.eye_weight, "has_mesh": f.lm is not None,
         "blink_rate": f.blink_rate, "talking": f.talking, "smiling": f.smiling,
@@ -317,6 +320,7 @@ class DetectionWorker(QThread):
 
                 faces, small = analyzer.process(frame)
                 now = time.monotonic()
+                tracker.update(faces, now)  # zuerst: liefert die Blickdauer für die Warnlogik
                 for ev in logic.update(now, faces):
                     if ev.kind == "alert":
                         self.alert.emit(ev.looking)
@@ -324,7 +328,6 @@ class DetectionWorker(QThread):
                         self.alert_update.emit(True)
                     elif ev.kind == "clear":
                         self.cleared.emit()
-                tracker.update(faces, now)
 
                 dt = now - last_frame_t
                 last_frame_t = now
@@ -1132,7 +1135,15 @@ class PreviewWidget(QWidget):
         if f["role"] == "owner":
             rows.append(("BLICK", "BILDSCHIRM" if f["looking"] else "ABGEWANDT", None))
         else:
-            rows.append(("BLICK", "AUF BILDSCHIRM" if looking else "ABGEWANDT", RED if looking else None))
+            if looking:
+                rows.append(("BLICK", "AUF BILDSCHIRM", RED))
+            elif f.get("looking_raw") and (f.get("dwell") or 0) > 0:
+                since = f.get("looking_since") or 0.0
+                rows.append(("BLICK", f"PRÜFE {min(since, f['dwell']):.1f}/{f['dwell']:.1f} S", AMBER))
+            else:
+                rows.append(("BLICK", "ABGEWANDT", None))
+            if (f.get("strict") or 0) > 0.05:
+                rows.append(("MODUS", f"STRENG {f['strict'] * 100:3.0f} %", None))
         ew = f.get("eye_weight") or 0.0
         if not f.get("has_mesh", True):
             src = "KOPF · 5 PUNKTE"

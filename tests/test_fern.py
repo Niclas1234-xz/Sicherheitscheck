@@ -14,7 +14,7 @@ def check(name, cond, info=""):
     global ok_all; ok_all &= bool(cond); print(("OK  " if cond else "FAIL"), name, info)
 
 # 1) Nur 5 Grobpunkte (YuNet), Person 3,5 m entfernt
-for dist_m, yaw, expect in ((3.5, 0, True), (3.5, 25, True), (3.5, 50, False), (5.0, 0, True), (5.0, -45, False)):
+for dist_m, yaw, expect in ((3.5, 0, True), (3.5, 10, True), (3.5, 25, False), (3.5, 50, False), (5.0, 0, True), (5.0, -45, False)):  # weit weg: streng (15°)
     t = np.array([0.4, -0.3, dist_m]) * 1000 * U
     # Kopf so drehen, dass yaw relativ zur Kamera-Richtung gilt
     base_yaw = math.degrees(math.atan2(t[0], t[2]))
@@ -26,8 +26,8 @@ for dist_m, yaw, expect in ((3.5, 0, True), (3.5, 25, True), (3.5, 50, False), (
     check(f"5 Punkte, {dist_m} m, Kopf {yaw:+d}°", fc.looking == expect,
           f"Gesicht {x1-x0:.0f}px  Kopf={fc.dev_h:+.1f}°  Entf={fc.distance_m:.1f} m  schaut={fc.looking}")
 
-# 2) Volle Landmarks, aber weit weg (kleine Augen) -> Kopfhaltung entscheidet, Toleranz 32°
-for yaw, expect in ((0, True), (28, True), (40, False)):
+# 2) Volle Landmarks, aber weit weg (kleine Augen) -> Kopfhaltung entscheidet, strenge Toleranz
+for yaw, expect in ((0, True), (10, True), (28, False), (40, False)):  # 4 m: strenger Modus
     t = (900, -500, 4000*U/1.0)
     lm = TA.synth(yaw, 0, t, 'kopf')            # Augen schauen geradeaus mit dem Kopf
     fc = E.analyze_landmarks(lm, W, H)

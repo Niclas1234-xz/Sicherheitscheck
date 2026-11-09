@@ -44,6 +44,15 @@ LOOK_YAW_TOL_HEAD_DEG = 32.0 # links/rechts, wenn nur die Kopfhaltung bekannt is
 LOOK_UP_TOL_DEG = 15.0       # über die Kamera hinaus nach oben
 LOOK_DOWN_TOL_DEG = 45.0     # unter die Kamera (= auf den Bildschirm)
 
+# Strenger Modus für Personen weiter weg: Nur wer wirklich auf den Laptop starrt, löst die Warnung aus.
+# Bis STRICT_FROM_M bleibt alles wie oben, bis STRICT_FULL_M wird gleitend auf die strengen Werte umgestellt.
+STRICT_FROM_M = 1.3          # ab dieser Entfernung beginnt der strenge Modus
+STRICT_FULL_M = 2.2          # ab hier gelten die strengen Werte voll
+FAR_YAW_TOL_DEG = 15.0       # links/rechts (statt 25–32°)
+FAR_UP_TOL_DEG = 8.0         # nach oben (statt 15°)
+FAR_DOWN_TOL_DEG = 30.0      # nach unten (statt 45°)
+FAR_DWELL_S = 1.5            # so lange muss der Blick ununterbrochen auf dem Bildschirm bleiben
+
 # Augenmodell: Der Blick wird aus der Lage der Iris relativ zum (aus der Kopfhaltung berechneten)
 # Augapfel bestimmt. So zählt, wohin die Augen schauen, auch wenn der Kopf weggedreht ist.
 EYE_RADIUS_MM = 11.5         # wirksamer Augapfelradius bis zur Iris
@@ -370,8 +379,27 @@ def eye_gaze_vector(lm: np.ndarray, R: np.ndarray, min_eye_px: float = MIN_EYE_P
     return np.array([gxy[0], gxy[1], gz])
 
 
-def is_looking(dev_h: float, dev_v: float, yaw_tol: float = LOOK_YAW_TOL_DEG) -> bool:
-    return abs(dev_h) <= yaw_tol and -LOOK_UP_TOL_DEG <= dev_v <= LOOK_DOWN_TOL_DEG
+def is_looking(dev_h: float, dev_v: float, yaw_tol: float = LOOK_YAW_TOL_DEG,
+               up_tol: float = LOOK_UP_TOL_DEG, down_tol: float = LOOK_DOWN_TOL_DEG) -> bool:
+    return abs(dev_h) <= yaw_tol and -up_tol <= dev_v <= down_tol
+
+
+def strictness(distance_m: Optional[float], far: bool = False) -> float:
+    """0 = nah (normale Toleranzen), 1 = weit weg (streng). Gleitender Übergang dazwischen."""
+    if distance_m is None:
+        return 1.0 if far else 0.0
+    return max(0.0, min(1.0, (distance_m - STRICT_FROM_M) / (STRICT_FULL_M - STRICT_FROM_M)))
+
+
+def judge_looking(face, yaw_tol_near: float) -> None:
+    """Setzt face.looking mit Toleranzen je nach Entfernung und die nötige Blickdauer (face.dwell_s)."""
+    s = strictness(face.distance_m, face.far)
+    yaw_tol = yaw_tol_near + (FAR_YAW_TOL_DEG - yaw_tol_near) * s
+    up_tol = LOOK_UP_TOL_DEG + (FAR_UP_TOL_DEG - LOOK_UP_TOL_DEG) * s
+    down_tol = LOOK_DOWN_TOL_DEG + (FAR_DOWN_TOL_DEG - LOOK_DOWN_TOL_DEG) * s
+    face.strict = s
+    face.dwell_s = FAR_DWELL_S * s
+    face.looking = is_looking(face.gaze_h, face.gaze_v, yaw_tol, up_tol, down_tol)
 
 
 # --------------------------------------------------------------------------- #
@@ -400,6 +428,9 @@ class Face:
     looking: Optional[bool] = None   # None = nicht schätzbar
     role: str = "other"              # "owner" (du) oder "other"
     far: bool = False                # über die Fern-Erkennung gefunden
+    strict: float = 0.0              # 0 = nah, 1 = weit weg (strenge Blickprüfung)
+    dwell_s: float = 0.0             # nötige ununterbrochene Blickdauer, bis es als «starrt» zählt
+    staring: Optional[bool] = None   # schaut lange genug hin (vom Tracker gesetzt)
     eye_weight: float = 0.0          # Anteil der Augen an der Blickschätzung (0 = nur Kopf, 1 = nur Augen)
     pts5: Optional[np.ndarray] = field(default=None, repr=False)  # 5 Grobpunkte (nur Fern-Erkennung)
     # zusätzliche Messwerte
@@ -486,7 +517,7 @@ def analyze_landmarks(lm_px: np.ndarray, w: int, h: int) -> Face:
     face.gaze_vec = v
     face.gaze_h, face.gaze_v = direction_deviation(v, t)
     tol = LOOK_YAW_TOL_HEAD_DEG + (LOOK_YAW_TOL_DEG - LOOK_YAW_TOL_HEAD_DEG) * weight
-    face.looking = is_looking(face.gaze_h, face.gaze_v, tol)
+    judge_looking(face, tol)
     return face
 
 
@@ -533,7 +564,7 @@ def face_from_points5(box, pts5: np.ndarray, w: int, h: int) -> Face:
     face.gaze_h, face.gaze_v = face.dev_h, face.dev_v
     face.gaze_vec = fwd
     face.distance_m = float(np.linalg.norm(t)) / MODEL_UNITS_PER_MM / 1000.0
-    face.looking = is_looking(face.gaze_h, face.gaze_v, LOOK_YAW_TOL_HEAD_DEG)
+    judge_looking(face, LOOK_YAW_TOL_HEAD_DEG)
     return face
 
 
@@ -847,6 +878,8 @@ class FaceTracker:
             if now - tr.not_looking_since > 0.4:
                 tr.looking_start = None
         f.looking_since = (now - tr.looking_start) if tr.looking_start is not None else None
+        # Weiter weg zählt erst ein längerer, ununterbrochener Blick («Starren»)
+        f.staring = looking and (f.dwell_s <= 0 or (f.looking_since or 0.0) >= f.dwell_s)
         tr.look_hist.append((now, looking))
         tr.look_hist = [(t, v) for t, v in tr.look_hist if now - t <= self.ATTENTION_WINDOW_S]
         if age >= 1.0:
@@ -892,7 +925,7 @@ class SecurityLogic:
         raw = len(others) > 0
 
         # Blickrichtung glätten
-        target = 1.0 if any(f.looking for f in others) else 0.0
+        target = 1.0 if any((f.staring if f.staring is not None else f.looking) for f in others) else 0.0
         self.look_score += LOOK_SMOOTHING * (target - self.look_score)
         if not self.looking and self.look_score >= LOOK_ON:
             self.looking = True

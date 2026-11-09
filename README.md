@@ -90,6 +90,7 @@ Alle Werte sind Schätzungen aus dem Kamerabild (die Entfernung z. B. ± 20–30
 - **Gesichter:** MediaPipe Face Landmarker findet bis zu fünf Gesichter mit je 478 Gesichtspunkten (inklusive Iris).
 - **Fern-Erkennung:** MediaPipe ist auf nahe Gesichter ausgelegt. Zusätzlich sucht OpenCV YuNet etwa fünfmal pro Sekunde im ganzen Bild nach kleinen, weit entfernten Gesichtern. Jedes gefundene Gesicht wird herangezoomt und dort mit MediaPipe genau vermessen. Gelingt das nicht, schätzt das Programm die Kopfhaltung aus fünf Grobpunkten (Augen, Nase, Mundwinkel). Ist YuNet nicht verfügbar, sucht das Programm ersatzweise in vergrösserten Bildvierteln.
 - **Nah oder fern:** Je kleiner die Augen im Bild, desto mehr entscheidet die Kopfhaltung statt der Iris. Weil die Augen den Kopf um einige Grad «korrigieren» können, ist die Toleranz dann etwas grösser (32° statt 25°). Im HUD zeigt «QUELLE», worauf die Schätzung beruht.
+- **Strenger Modus für Personen weiter weg:** Bis 1,3 m bleibt alles wie oben. Danach wird die Prüfung gleitend strenger und gilt ab 2,2 m voll: Der Blick muss viel direkter auf den Laptop zeigen (15° seitlich, 8° nach oben, 30° nach unten) und **etwa 1,5 Sekunden ununterbrochen** auf dem Bildschirm bleiben. Erst dann wird es rot. Ein kurzer Blick aus dem Hintergrund ergibt nur den orangen Streifen. Im HUD zeigt «BLICK  PRÜFE 0.8/1.5 S», wie lange die Person schon hinschaut, und «MODUS», wie streng geprüft wird. Die Werte lassen sich oben in `erkennung.py` anpassen (`STRICT_FROM_M`, `STRICT_FULL_M`, `FAR_YAW_TOL_DEG`, `FAR_DWELL_S`).
 - **Wer bist du?** Das grösste bzw. bisher verfolgte Gesicht gilt als deines, alle anderen als zusätzliche Personen.
 - **Entprellung:** Eine zweite Person muss rund 0,5 Sekunden sichtbar sein, bevor gewarnt wird. Kurze Fehlerkennungen lösen also keinen Alarm aus.
 - **Kopfhaltung:** Aus sechs Gesichtspunkten (Nase, Kinn, Augen- und Mundwinkel) wird die Kopfrichtung im Raum berechnet und mit der Richtung zur Kamera verglichen. Wer auf den Bildschirm schaut, schaut ungefähr zur Kamera oder etwas darunter.
@@ -115,7 +116,7 @@ Die Schwellenwerte (Winkeltoleranzen, Wartezeiten, Bildrate) stehen oben in `erk
 | `erkennung.py` | Gesichtserkennung, Kopfhaltung, Blickrichtung und Warnlogik |
 | `verknuepfung.py` | richtet Startmenü- bzw. Programme-Eintrag und den Autostart ein |
 | `icon/` | App-Symbol (Windows, macOS, Linux) |
-| `tests/` | Tests mit simulierten Gesichtern, z. B. `python tests/test_fern.py` |
+| `tests/` | Tests mit simulierten Gesichtern, z. B. `python tests/test_streng.py` |
 | `requirements.txt` | benötigte Python-Pakete |
 | `start_windows.bat`, `start_mac_linux.sh` | Startskripte mit automatischer Einrichtung |
 
